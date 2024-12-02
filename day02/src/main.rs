@@ -11,14 +11,14 @@ enum ReportGridError {}
 impl FromStr for ReportGrid {
     type Err = ReportGridError;
     fn from_str(puzzle: &str) -> Result<Self, Self::Err> {
-        let mut grid = vec![];
-        for line in puzzle.lines() {
-            let report = line
-                .split_whitespace()
-                .filter_map(|x| x.parse().ok())
-                .collect();
-            grid.push(report);
-        }
+        let grid = puzzle
+            .lines()
+            .map(|line| {
+                line.split_whitespace()
+                    .filter_map(|x| x.parse().ok())
+                    .collect()
+            })
+            .collect();
 
         Ok(ReportGrid { grid })
     }
@@ -48,23 +48,23 @@ fn is_safe(report: &[i32]) -> bool {
 }
 
 fn is_safe_dampened(report: &[i32]) -> bool {
-        // Check base case
-        if is_safe(report) {
+    // Check base case
+    if is_safe(report) {
+        return true;
+    }
+    // Try removing each element in turn until a successful case is found
+    for idx in 0..report.len() {
+        let report_clone = {
+            let mut clone = report.to_vec();
+            clone.remove(idx);
+            clone
+        };
+        if is_safe(&report_clone) {
             return true;
         }
-        // Try removing each element in turn until a successful case is found
-        for idx in 0..report.len() {
-            let report_clone = {
-                let mut clone = report.to_vec();
-                clone.remove(idx);
-                clone
-            };
-            if is_safe(&report_clone) {
-                return true;
-            }
-        }
-    
-        false
+    }
+
+    false
 }
 
 impl ReportGrid {
