@@ -16,7 +16,7 @@ struct TobogganComputer {
 impl FromStr for TobogganComputer {
     type Err = anyhow::Error;
     fn from_str(puzzle: &str) -> Result<Self, Self::Err> {
-        let re = Regex::new(r"mul\((\d*),(\d*)\)|don't|do")?;
+        let re = Regex::new(r"mul\((\d*),(\d*)\)|don't\(\)|do\(\)")?;
         let mut instructions = vec![];
 
         for capture in re.captures_iter(puzzle) {
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_valid_do_instruction() {
-        let instr = "do";
+        let instr = "do()";
         let result = TobogganComputer::from_str(instr).unwrap();
         assert_eq!(result.instructions, vec![Instruction::Do]);
     }
