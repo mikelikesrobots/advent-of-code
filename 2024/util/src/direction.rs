@@ -52,6 +52,15 @@ impl Direction {
         ]
     }
 
+    pub fn horiz_and_vert() -> Vec<Direction> {
+        vec![
+            Direction::Up,
+            Direction::Right,
+            Direction::Down,
+            Direction::Left,
+        ]
+    }
+
     pub fn corners() -> Vec<Direction> {
         vec![
             Direction::UpLeft,
