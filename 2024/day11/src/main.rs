@@ -2,7 +2,6 @@ use std::{collections::HashMap, num::ParseIntError, str::FromStr};
 
 struct PlutoStones {
     stones: Vec<u64>,
-    cache: HashMap<(u64, usize), usize>,
 }
 
 impl FromStr for PlutoStones {
@@ -12,7 +11,7 @@ impl FromStr for PlutoStones {
             .split_whitespace()
             .map(|s| s.parse::<u64>())
             .collect::<Result<Vec<u64>, _>>()?;
-        Ok(PlutoStones { stones, cache: HashMap::new() })
+        Ok(PlutoStones { stones })
     }
 }
 
@@ -38,32 +37,23 @@ impl PlutoStones {
         (stone * 2024, None)
     }
 
-    fn stones_after_iterations(&mut self, initial_stone: u64, iterations: usize) -> usize {
-        let mut stones = vec![initial_stone];
-        let mut acc = 0;
+    fn stones_after_iterations(&self, initial_stone: u64, iterations: usize) -> usize {
+        let mut stones = HashMap::new();
+        stones.insert(initial_stone, 1);
 
-        for idx in 0..iterations {
-            let mut next_stones = vec![];
-            let iter_remaining = iterations - idx;
-            for stone in stones {
-                // Check if stone is cached with n iterations remaining
-                if let Some(x) = self.cache.get(&(stone, iter_remaining)) {
-                    acc += x;
-                    continue;
-                }
-
+        for _ in 0..iterations {
+            let mut next_stones = HashMap::new();
+            for (stone, count) in stones {
                 let (left, right_opt) = PlutoStones::apply_rule(stone);
-                next_stones.push(left);
+                *next_stones.entry(left).or_insert(0) += count;
                 if let Some(right) = right_opt {
-                    next_stones.push(right);
+                    *next_stones.entry(right).or_insert(0) += count;
                 }
             }
             stones = next_stones;
-
-            self.cache.insert((initial_stone, idx + 1), stones.len());
         }
 
-        acc + stones.len()
+        stones.values().sum()
     }
 
     fn part_a(&mut self) -> usize {
