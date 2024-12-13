@@ -14,73 +14,54 @@ enum PlantMapErr {}
 impl FromStr for PlantMap {
     type Err = PlantMapErr;
     fn from_str(puzzle: &str) -> Result<Self, Self::Err> {
-        let mut map: HashMap<char, Vec<Point>> = HashMap::new();
-        for (row_idx, row) in puzzle.lines().enumerate() {
-            for (col_idx, plant_type) in row.chars().enumerate() {
-                map.entry(plant_type)
+        let grid: Vec<Vec<char>> = puzzle.lines().map(|l| l.chars().collect()).collect();
+
+        let in_bounds = |point: &Point| {
+            point.0 >= 0
+                && point.1 >= 0
+                && point.0 < (grid.len() as i32)
+                && point.1 < (grid[0].len() as i32)
+        };
+
+        let mut regions: HashMap<char, Vec<Vec<Point>>> = HashMap::new();
+
+        let mut explored = HashSet::new();
+        let mut stack = vec![];
+        let mut current_region = HashSet::new();
+        for (row_idx, row) in grid.iter().enumerate() {
+            for (col_idx, plant_type) in row.iter().enumerate() {
+                let point = Point(row_idx as i32, col_idx as i32);
+                if explored.contains(&point) {
+                    continue;
+                }
+
+                stack.push(point);
+                while let Some(point) = stack.pop() {
+                    explored.insert(point);
+                    current_region.insert(point);
+
+                    // Check in all directions of point
+                    let all_points = Direction::horiz_and_vert()
+                        .into_iter()
+                        .map(|d| point.add(&d.to_point()))
+                        .filter(|p| !explored.contains(p))
+                        .filter(&in_bounds)
+                        .filter(|p| grid[p.0 as usize][p.1 as usize] == *plant_type);
+                    stack.extend(all_points);
+                }
+                regions
+                    .entry(*plant_type)
                     .or_default()
-                    .push(Point(row_idx as i32, col_idx as i32));
+                    .push(current_region.clone().into_iter().collect::<Vec<Point>>());
+                current_region.clear();
             }
         }
 
-        let regions = {
-            let mut regions = HashMap::new();
-            map.iter().for_each(|(&plant_type, locations)| {
-                _ = regions.insert(plant_type, PlantMap::group_contiguous(locations))
-            });
-            regions
-        };
         Ok(PlantMap { regions })
     }
 }
 
 impl PlantMap {
-    fn group_contiguous(locations: &[Point]) -> Vec<Vec<Point>> {
-        let mut output = vec![];
-
-        let touches = |point: &Point, region: &Vec<Point>| {
-            for d in Direction::horiz_and_vert() {
-                if region.contains(&point.add(&d.to_point())) {
-                    return true;
-                }
-            }
-            false
-        };
-        for location in locations {
-            // Check if it matches an existing contiguous region
-            if let Some(region) = output.iter_mut().find(|region| touches(location, region)) {
-                region.push(*location);
-                let mut combine_left_idx = Some(0);
-                while combine_left_idx.is_some() {
-                    combine_left_idx = None;
-                    let mut combine_right_idx = None;
-                    'outer: for left_idx in 0..output.len() - 1 {
-                        for right_idx in left_idx + 1..output.len() {
-                            let left_region = &output[left_idx];
-                            let right_region = &output[right_idx];
-                            for p in right_region.iter() {
-                                if touches(p, left_region) {
-                                    combine_left_idx = Some(left_idx);
-                                    combine_right_idx = Some(right_idx);
-                                    break 'outer;
-                                }
-                            }
-                        }
-                    }
-
-                    if combine_left_idx.is_some() {
-                        let right_region = output.remove(combine_right_idx.unwrap());
-                        output[combine_left_idx.unwrap()].extend(right_region);
-                    }
-                }
-            } else {
-                output.push(vec![*location]);
-            }
-        }
-
-        output
-    }
-
     fn area(region: &[Point]) -> usize {
         region.len()
     }
