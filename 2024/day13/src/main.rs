@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, str::FromStr};
+use std::str::FromStr;
 
 #[derive(Debug)]
 struct Button {
@@ -27,69 +27,23 @@ impl ArcadeMachine {
         Ok(ArcadeMachine { a, b, target_x, target_y })
     }
 
-    fn order_x(&self) -> (&Button, &Button) {
-        match self.a.x.cmp(&self.b.x) {
-            Ordering::Greater | Ordering::Equal => (&self.b, &self.a),
-            Ordering::Less => (&self.a, &self.b),
-        }
-    }
+    fn min_tokens(&self, target_adjust: i64) -> Option<i64> {
+        let target_x = self.target_x + target_adjust;
+        let target_y = self.target_y + target_adjust;
 
-    fn min_tokens(&self) -> Option<usize> {
-        let (min_by_x, max_by_x) = self.order_x();
-        let min_iters_x = self.target_x / max_by_x.x;
-        let min_iters_y = self.target_y / self.a.y.max(self.b.y);
-        let min_iters = min_iters_x.max(min_iters_y);
-
-        for total_button_presses in min_iters..=200 {
-            for n in 0..total_button_presses {
-                let achieved_x = n * min_by_x.x + (total_button_presses - n) * max_by_x.x;
-                if achieved_x != self.target_x {
-                    continue;
-                }
-                let achieved_y = n * min_by_x.y + (total_button_presses - n) * max_by_x.y;
-                if achieved_y != self.target_y {
-                    continue;
-                }
-                let min_by_x_tokens = (n * min_by_x.cost) as usize;
-                let max_by_x_tokens = ((total_button_presses - n) * max_by_x.cost) as usize;
-                return Some(min_by_x_tokens + max_by_x_tokens);
-            }
+        let b_multiplied = self.a.y * target_x - self.a.x * target_y;
+        let b_divisor = self.a.y * self.b.x - self.a.x * self.b.y;
+        let b = b_multiplied / b_divisor;
+        let brem = b_multiplied % b_divisor;
+        let a_multiplied = target_x - b * self.b.x;
+        let a_divisor = self.a.x;
+        let a = a_multiplied / a_divisor;
+        let arem = a_multiplied % a_divisor;
+        if arem != 0 || brem != 0 {
+            return None;
         }
 
-        None
-    }
-
-    fn min_tokens_corrected_targets(&self) -> Option<usize> {
-        let (min_by_x, max_by_x) = self.order_x();
-        let target_x = self.target_x + 1_000_000_000_000;
-        let target_y = self.target_y + 1_000_000_000_000;
-        let min_iters_x = target_x / max_by_x.x;
-        let min_iters_y = target_y / self.a.y.max(self.b.y);
-        let min_iters = min_iters_x.max(min_iters_y);
-        
-        let max_iters_x = target_x / min_by_x.x;
-        let max_iters_y = target_y / self.a.y.min(self.b.y);
-        let max_iters = max_iters_x.min(max_iters_y);
-
-        println!("Min iters: {}; max iters: {}", min_iters, max_iters);
-
-        for total_button_presses in min_iters..=max_iters {
-            for n in 0..total_button_presses {
-                let achieved_x: i64 = n * min_by_x.x + (total_button_presses - n) * max_by_x.x;
-                if achieved_x != target_x {
-                    continue;
-                }
-                let achieved_y = n * min_by_x.y + (total_button_presses - n) * max_by_x.y;
-                if achieved_y != target_y {
-                    continue;
-                }
-                let min_by_x_tokens = (n * min_by_x.cost) as usize;
-                let max_by_x_tokens = ((total_button_presses - n) * max_by_x.cost) as usize;
-                return Some(min_by_x_tokens + max_by_x_tokens);
-            }
-        }
-
-        None
+        Some(a * self.a.cost + b * self.b.cost)
     }
 }
 
@@ -112,17 +66,11 @@ impl FromStr for Arcade {
 }
 
 impl Arcade {
-    fn part_a(&self) -> usize {
-        self.machines.iter().filter_map(|m| {
-            let tokens = m.min_tokens();
-            if let Some(tokens) = tokens {
-                println!("{}, {}, {}, {}, {}, {}, {}", tokens, m.a.x, m.a.y, m.b.x, m.b.y, m.target_x, m.target_y);
-            }
-            tokens
-        }).sum()
+    fn part_a(&self) -> i64 {
+        self.machines.iter().filter_map(|m| m.min_tokens(0)).sum()
     }
-    fn part_b(&self) -> usize {
-        self.machines.iter().filter_map(|m| m.min_tokens_corrected_targets()).sum()
+    fn part_b(&self) -> i64 {
+        self.machines.iter().filter_map(|m| m.min_tokens(10_000_000_000_000)).sum()
     }
 }
 
@@ -151,18 +99,19 @@ mod test {
         let puzzle = include_str!("../puzzle/test.txt");
         let arcade = Arcade::from_str(puzzle).unwrap();
         let result = arcade.part_b();
-        assert_eq!(result, 480);
+        assert_eq!(result, 875318608908);
     }
 
     #[test]
     fn test_min_tokens_single_machine() {
         let machine = ArcadeMachine::new_from_strs("94", "34", "22", "67", "8400", "5400").unwrap();
-        assert_eq!(machine.min_tokens().unwrap(), 280);
+        assert_eq!(machine.min_tokens(0).unwrap(), i64::from(280u32));
     }
 
     #[test]
     fn test_min_tokens_increased_targets_single_machine() {
         let machine = ArcadeMachine::new_from_strs("94", "34", "22", "67", "8400", "5400").unwrap();
-        assert_eq!(machine.min_tokens_corrected_targets().unwrap(), 280);
+        assert_eq!(machine.min_tokens(1_000_000_000_000), None);
     }
+
 }
