@@ -26,6 +26,20 @@ impl Direction {
         }
     }
 
+    pub fn from_point(point: &Point) -> Option<Direction> {
+        match point {
+            Point(-1, 0) => Some(Direction::Up),
+            Point(-1, 1) => Some(Direction::UpRight),
+            Point(0, 1) => Some(Direction::Right),
+            Point(1, 1) => Some(Direction::DownRight),
+            Point(1, 0) => Some(Direction::Down),
+            Point(1, -1) => Some(Direction::DownLeft),
+            Point(0, -1) => Some(Direction::Left),
+            Point(-1, -1) => Some(Direction::UpLeft),
+            _ => None,
+        }
+    }
+
     pub fn opposite(&self) -> Direction {
         match self {
             Direction::Up => Direction::Down,
@@ -80,6 +94,19 @@ impl Direction {
             Direction::DownLeft => Direction::UpLeft,
             Direction::Left => Direction::Up,
             Direction::UpLeft => Direction::UpRight,
+        }
+    }
+
+    pub fn left90(&self) -> Direction {
+        match self {
+            Direction::Up => Direction::Left,
+            Direction::UpRight => Direction::UpLeft,
+            Direction::Right => Direction::Up,
+            Direction::DownRight => Direction::UpRight,
+            Direction::Down => Direction::Right,
+            Direction::DownLeft => Direction::DownRight,
+            Direction::Left => Direction::Down,
+            Direction::UpLeft => Direction::DownLeft,
         }
     }
 }
