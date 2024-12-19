@@ -67,71 +67,6 @@ impl Computer {
         }
     }
 
-    // Reverse engineer the program, I guess?
-    // Figure out everywhere that the program uses register A
-    // PC is always even, so we can look at odd numbers for the rest
-    // All the places in the program where the odd digit is 4, meaning the A register
-    // All the opcodes involving register A: 
-    // 0, 3, 5, 6, 7
-    // How do registers B/C affect A?
-    // 0 - weird registers can go in here
-
-    // Test txt
-    // while RA >= 0 {
-    //    RA = RA >> 1
-    //    print(A & 0x7)
-    // }
-    // Backwards:
-    // while still building program:
-    // btm 3 digits of A = digit
-    // A = A << 1
-    // XOR? OR?
-    // Set bits?
-    // btm 3 bits need to be digit; set them, then continue
-
-    // Test own output txt:
-    // A = A << 3
-    // Out 4
-
-
-    // inline Uint bit_set_to(Uint number, Uint n, bool x) {
-    //     return (number & ~((Uint)1 << n)) | ((Uint)x << n);
-    // }
-
-    // To solve test txt, we need:
-    // 0b0000 +
-    // 0b
-
-    // Input text
-    // while RA > 0 {
-    //   RB = A & 0b111
-    //   RB = RB ^ 1
-    //   RC = RA >> RB
-    //   RB = RB ^ RC
-    //   RB = RB ^ 0b100
-    //   RA = RA >> 3
-    //   out RB & 0b111
-    // }
-
-    // Looking at the program, RA is never written to
-    // except for right shift by 3 - a constant amount
-    // That means to find the solution, we need a number at least (1 << program length * 3)
-    // aka 16*3 = 48
-    // meaning A is at least 1 << 48, which doesn't fit in u64
-    // time to switch to u64
-
-    // We keep setting RB to the bottom 3 bits of A,
-    // then doing some operations on it
-
-    // while RA > 0 {
-    //   RB = (A & 0b111) ^ 1
-    //   RC = RA >> RB
-    //   RB = (RB ^ RC) ^ 0b100
-    //   RB = RB ^ 0b100
-    //   RA = RA >> 3
-    //   out RB & 0b111
-    // }
-
     fn tick(&mut self, pc: usize) -> (usize, Option<u64>) {
         let opcode = self.program[pc];
         match opcode {
@@ -143,7 +78,7 @@ impl Computer {
             }
             2 => {
                 let combo = self.get_operand(self.program[pc + 1]).unwrap();
-                self.b = combo & 0x7;
+                self.b = combo & 0b111;
             }
             3 => {
                 if self.a != 0 {
@@ -197,9 +132,7 @@ impl Computer {
     }
 
     pub fn solve_input_txt(&self) -> Option<u64> {
-        // let mut acc = 0;
         let mut acc_candidates = vec![0];
-        println!("{:?}", &self.program);
         for digit in self.program.iter().rev() {
             let mut current_cands = vec![];
             while let Some(acc) = acc_candidates.pop() {
@@ -220,16 +153,9 @@ impl Computer {
 
         let final_candidates: Vec<u64> = acc_candidates.iter().map(|x| x >> 3).collect();
 
-        // println!("Acc candidates: {:?}", final_candidates);
-
         // Go through our acc candidates to find the one that works
         for cand in final_candidates.iter() {
             let mut comp = self.clone();
-            comp.a = *cand;
-
-            // println!("Acc {} ({:b}) produces {}", cand, cand, comp.part_a());
-
-            comp = self.clone();
             comp.a = *cand;
             if comp.produces_own_program() {
                 return Some(*cand);
@@ -261,13 +187,7 @@ impl Computer {
 
     pub fn part_b(&mut self) -> u64 {
         let orig_bc = (self.b, self.c);
-        // self.a = 117440;
-        // if self.produces_own_program() {
-        //     return 117440;
-        // }
-        // 0
         (0..).find(|a_cand| {
-            println!("Testing a candidate: {}", a_cand);
             self.a = *a_cand;
             (self.b, self.c) = orig_bc;
             self.produces_own_program()
