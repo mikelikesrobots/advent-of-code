@@ -2,10 +2,10 @@ use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct Computer {
-    a: u32,
-    b: u32,
-    c: u32,
-    program: Vec<u32>,
+    a: u64,
+    b: u64,
+    c: u64,
+    program: Vec<u64>,
 }
 
 impl Clone for Computer {
@@ -29,17 +29,17 @@ impl FromStr for Computer {
 
         let a = lines[0]
             .split_whitespace()
-            .map(|x| x.parse::<u32>())
+            .map(|x| x.parse::<u64>())
             .find(&Result::is_ok)
             .unwrap_or(Ok(0))?;
         let b = lines[1]
             .split_whitespace()
-            .map(|x| x.parse::<u32>())
+            .map(|x| x.parse::<u64>())
             .find(&Result::is_ok)
             .unwrap_or(Ok(0))?;
         let c = lines[2]
             .split_whitespace()
-            .map(|x| x.parse::<u32>())
+            .map(|x| x.parse::<u64>())
             .find(&Result::is_ok)
             .unwrap_or(Ok(0))?;
 
@@ -56,7 +56,7 @@ impl FromStr for Computer {
 }
 
 impl Computer {
-    fn get_operand(&self, operand: u32) -> Option<u32> {
+    fn get_operand(&self, operand: u64) -> Option<u64> {
         match operand {
             0..=3 => Some(operand),
             4 => Some(self.a),
@@ -67,14 +67,76 @@ impl Computer {
         }
     }
 
-    fn tick(&mut self, pc: usize) -> (usize, Option<u32>) {
+    // Reverse engineer the program, I guess?
+    // Figure out everywhere that the program uses register A
+    // PC is always even, so we can look at odd numbers for the rest
+    // All the places in the program where the odd digit is 4, meaning the A register
+    // All the opcodes involving register A: 
+    // 0, 3, 5, 6, 7
+    // How do registers B/C affect A?
+    // 0 - weird registers can go in here
+
+    // Test txt
+    // while RA >= 0 {
+    //    RA = RA >> 1
+    //    print(A & 0x7)
+    // }
+    // Backwards:
+    // while still building program:
+    // btm 3 digits of A = digit
+    // A = A << 1
+    // XOR? OR?
+    // Set bits?
+    // btm 3 bits need to be digit; set them, then continue
+
+    // Test own output txt:
+    // A = A << 3
+    // Out 4
+
+
+    // inline Uint bit_set_to(Uint number, Uint n, bool x) {
+    //     return (number & ~((Uint)1 << n)) | ((Uint)x << n);
+    // }
+
+    // To solve test txt, we need:
+    // 0b0000 +
+    // 0b
+
+    // Input text
+    // while RA > 0 {
+    //   RB = A & 0b111
+    //   RB = RB ^ 1
+    //   RC = RA >> RB
+    //   RB = RB ^ RC
+    //   RB = RB ^ 0b100
+    //   RA = RA >> 3
+    //   out RB & 0b111
+    // }
+
+    // Looking at the program, RA is never written to
+    // except for right shift by 3 - a constant amount
+    // That means to find the solution, we need a number at least (1 << program length * 3)
+    // aka 16*3 = 48
+    // meaning A is at least 1 << 48, which doesn't fit in u64
+    // time to switch to u64
+
+    // We keep setting RB to the bottom 3 bits of A,
+    // then doing some operations on it
+
+    // while RA > 0 {
+    //   RB = (A & 0b111) ^ 1
+    //   RC = RA >> RB
+    //   RB = (RB ^ RC) ^ 0b100
+    //   RB = RB ^ 0b100
+    //   RA = RA >> 3
+    //   out RB & 0b111
+    // }
+
+    fn tick(&mut self, pc: usize) -> (usize, Option<u64>) {
         let opcode = self.program[pc];
         match opcode {
             0 => {
-                let num = self.a;
-                let operand = self.program[pc + 1];
-                let denom = 2u32.pow(self.get_operand(operand).unwrap());
-                self.a = num / denom;
+                self.a >>= self.get_operand(self.program[pc + 1]).unwrap();
             }
             1 => {
                 self.b ^= self.program[pc + 1];
@@ -96,16 +158,10 @@ impl Computer {
                 return (pc + 2, Some(operand & 0x7));
             }
             6 => {
-                let num = self.a;
-                let operand = self.program[pc + 1];
-                let denom = 2u32.pow(self.get_operand(operand).unwrap());
-                self.b = num / denom;
+                self.b = self.a >> self.get_operand(self.program[pc + 1]).unwrap();
             }
             7 => {
-                let num = self.a;
-                let operand = self.program[pc + 1];
-                let denom = 2u32.pow(self.get_operand(operand).unwrap());
-                self.c = num / denom;
+                self.c = self.a >> self.get_operand(self.program[pc + 1]).unwrap();
             }
             _ => (),
         }
@@ -132,9 +188,59 @@ impl Computer {
         true
     }
 
+    fn solve_test_txt(&self) -> u64 {
+        let mut acc = 0;
+        for digit in self.program.iter().rev() {
+            acc = ((acc & !0b111) | digit) << 3;
+        }
+        acc
+    }
+
+    pub fn solve_input_txt(&self) -> Option<u64> {
+        // let mut acc = 0;
+        let mut acc_candidates = vec![0];
+        println!("{:?}", &self.program);
+        for digit in self.program.iter().rev() {
+            let mut current_cands = vec![];
+            while let Some(acc) = acc_candidates.pop() {
+                for b_cand in 0..8 {
+                    let mut b = b_cand ^ 1;
+                    let c = acc >> b;
+                    b ^= c;
+                    b ^= 0b100;
+                    b &= 0b111;
+                    if b == *digit {
+                        let next_acc = ((acc & !0b111) | b_cand) << 3;
+                        current_cands.push(next_acc)
+                    }
+                }
+            }
+            acc_candidates = current_cands.to_vec();
+        }
+
+        let final_candidates: Vec<u64> = acc_candidates.iter().map(|x| x >> 3).collect();
+
+        // println!("Acc candidates: {:?}", final_candidates);
+
+        // Go through our acc candidates to find the one that works
+        for cand in final_candidates.iter() {
+            let mut comp = self.clone();
+            comp.a = *cand;
+
+            // println!("Acc {} ({:b}) produces {}", cand, cand, comp.part_a());
+
+            comp = self.clone();
+            comp.a = *cand;
+            if comp.produces_own_program() {
+                return Some(*cand);
+            }
+        }
+        None
+    }
+
     fn get_outputs(&mut self) -> String {
         let mut pc = 0;
-        let mut outputs: Vec<u32> = vec![];
+        let mut outputs: Vec<u64> = vec![];
         while pc < self.program.len() {
             let (new_pc, out_opt) = self.tick(pc);
             pc = new_pc;
@@ -153,7 +259,7 @@ impl Computer {
         self.get_outputs()
     }
 
-    pub fn part_b(&mut self) -> u32 {
+    pub fn part_b(&mut self) -> u64 {
         let orig_bc = (self.b, self.c);
         // self.a = 117440;
         // if self.produces_own_program() {
@@ -166,25 +272,6 @@ impl Computer {
             (self.b, self.c) = orig_bc;
             self.produces_own_program()
         }).unwrap()
-
-        // let prog_str = self
-        //     .program
-        //     .iter()
-        //     .map(|n| n.to_string())
-        //     .collect::<Vec<String>>()
-        //     .join(",");
-
-        // let mut a_cand = 0;
-        // loop {
-        //     let mut comp = self.clone();
-        //     comp.a = a_cand;
-        //     let result = comp.compute();
-        //     if result == prog_str {
-        //         break;
-        //     }
-        //     a_cand += 1;
-        // }
-        // a_cand
     }
 }
 
@@ -201,7 +288,7 @@ mod tests {
     #[test]
     fn test_test_own_output_txt() {
         let puzzle = include_str!("../puzzle/test_own_output.txt");
-        let mut computer = Computer::from_str(puzzle).unwrap();
-        assert_eq!(117440, computer.part_b());
+        let computer = Computer::from_str(puzzle).unwrap();
+        assert_eq!(117440, computer.solve_test_txt());
     }
 }
