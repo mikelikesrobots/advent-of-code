@@ -41,6 +41,18 @@ impl Point {
     }
 }
 
+// TODO can I make this generic for any integer type?
+impl From<(usize, usize)> for Point {
+    fn from((x, y): (usize, usize)) -> Self {
+        Self(x as i32, y as i32)
+    }
+}
+impl From<Point> for (usize, usize) {
+    fn from(value: Point) -> Self {
+        (value.0 as usize, value.1 as usize)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,5 +62,17 @@ mod tests {
         let p1 = Point(1, 0);
         let p2 = Point(2, 0);
         assert_eq!(p1.direction_of(&p2), Some(Direction::Down));
+    }
+
+    #[test]
+    fn test_from_usize() {
+        let point = Point::from((4usize, 9usize));
+        assert_eq!(Point(4, 9), point);
+    }
+
+    #[test]
+    fn test_into_usize() {
+        let point = Point(4, 9);
+        assert_eq!((4usize, 9usize), point.into());
     }
 }
