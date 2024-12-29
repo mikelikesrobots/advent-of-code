@@ -226,50 +226,16 @@ impl<'a> CrossedWires {
     }
 
     fn part_b(&self, depth_limit: usize) -> Option<String> {
-        let x = self.convert_starting_with('x');
-        let y = self.convert_starting_with('y');
-        let z_correct = x.and_then(|x| y.map(|y| y + x));
-        let z_actual = self.convert_starting_with('z');
+        // let x = self.convert_starting_with('x');
+        // let y = self.convert_starting_with('y');
+        // let z_correct = x.and_then(|x| y.map(|y| y + x));
+        // let z_actual = self.convert_starting_with('z');
 
-        let (z_correct, z_actual) = match (z_correct, z_actual) {
-            (Some(correct), Some(actual)) => (correct, actual),
-            _ => return None,
-        };
-        let diff = z_correct ^ z_actual;
-
-        let mut bad_wires = vec![];
-        for idx in 0.. {
-            let mask = 1 << idx;
-            if mask > diff {
-                break;
-            }
-            if diff & (1 << idx) > 0 {
-                bad_wires.push(format!("z{:#02}", idx));
-            }
-        }
-
-        // Okay! Even narrowing down to 132 entries, we're iterating over it 8 times
-        // So 132^8 possibilities. Which is a lot.
-        // Hence it taking freaking forever. There has to be a better way..
-        // Do we try to figure out the intermediate steps? Compare the design to a correct one?
-        // Can we alter the inputs to see how it relates to the outputs?
-        // Can we simulate each layer of the network, finding what we need to swap to get the right output?
-        // Maybe we start with the surface wires - z wires
-        // We figure out which ones we need to swap in order to make the correct number
-        // How many are there? Quite a few, I thought
-        // 10 bits are wrong
-        // Can we swap bits around in x/y until we get something that's correct?
-        // How many bits are involved for each z bit? Presumably it's two max, right?
-        // So we can partition them a bit?
-        // Let's see what z0 and z1 depend on
-
-        // let xydeps = |s: &str| {
-        //     self.sources_of(&s.to_string()).unwrap().into_iter().filter(|wire| wire.starts_with('x') || wire.starts_with('y')).map(|s| s.to_string()).collect::<Vec<_>>()
+        // let (z_correct, z_actual) = match (z_correct, z_actual) {
+        //     (Some(correct), Some(actual)) => (correct, actual),
+        //     _ => return None,
         // };
-        // let z0deps = xydeps("z00");
-        // let z1deps = xydeps("z02");
-        // println!("z0 xydeps: {:?}", z0deps);
-        // println!("z1 xydeps: {:?}", z1deps);
+        // let diff = z_correct ^ z_actual;
 
         // z0 should depend on x0, y0.
         // z1 should depend on x0, x1, y0, y1.
@@ -282,12 +248,6 @@ impl<'a> CrossedWires {
         // I guess we keep looping until we find the right answer.
         // The first gate where we get new additions doesn't mean that's the one which needs swapping. It could be
         // one of its children. So we probably need to recurse through that network to find the broken point.
-
-        // Let's try precalculating the tree under a node for all nodes.
-        // We could try doing a tree - we're guaranteed for that to be enough connections.
-        // Then we can traverse the tree to
-
-        // Or just do it with hash map. Tree does mean moving around the tree for all the checks.
 
         let z_wires: Vec<String> = self
             .wires
@@ -307,22 +267,30 @@ impl<'a> CrossedWires {
             deps
                 .get(s)
                 .unwrap()
-                .into_iter()
+                .iter()
                 .filter(|wire| wire.starts_with('x') || wire.starts_with('y'))
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
+        };
+        let is_xy = |s: &String| s.starts_with('x') || s.starts_with('y');
+        let contains_all = |allowed: &Vec<String>, test: &Vec<String>| {
+            test.iter().all(|val| allowed.contains(val))
         };
         let mut swapped_wires: Vec<String> = vec![];
 
         for (z_idx, z_wire) in z_wires.iter().enumerate() {
             expected_xy_deps.extend(vec![format!("x{:#02}", z_idx), format!("y{:#02}", z_idx)]);
-            // TODO: fix this option handling
-            while expected_xy_deps.len() < xydeps(&all_deps, z_wire).len() {
+            while !contains_all(&expected_xy_deps, &xydeps(&all_deps, z_wire)) {
                 // Figure out where to swap wires
                 let mut root = z_wire.to_string();
                 'outer: loop {
                     {
+                        // For current node, check what gates it depends on
                         let deps = CrossedWires::deps_1(&wires, &root).unwrap().clone();
+                        let (gates, wires): (Vec<_>, Vec<_>) = deps.iter().partition(|v| !is_xy(v));
+                        // Are any wires not allowed? If not, swap this node
+
+                        // Otherwise, go until you reach the point with not allowed wires
                         if deps.len() < 2 {
                             panic!("Infinite loop - got to a const value!");
                         }
@@ -331,12 +299,7 @@ impl<'a> CrossedWires {
                         // Swap root.
                         // If one dep contains a bad thing, set root to it and continue.
                         for (idx, set) in deps.iter().enumerate() {
-                            // I can't use length here! I have to check if any xy wires have an index beyond the allowed
-                            let xy_of_set = xydeps(&all_deps, set);
-                            if xy_of_set
-                                .iter()
-                                .any(|wire| !expected_xy_deps.contains(wire))
-                            {
+                            if !contains_all(&expected_xy_deps, &xydeps(&all_deps, set)) {
                                 root = deps[idx].to_string();
                                 continue 'outer;
                             }
@@ -352,7 +315,7 @@ impl<'a> CrossedWires {
                     let (other_key, _) = all_deps.iter().find(|(key, deps)| {
                         let wire_not_already_used = !root_deps.contains(*key);
                         let set_xy = deps
-                            .into_iter()
+                            .iter()
                             .filter(|wire| wire.starts_with('x') || wire.starts_with('y'))
                             .map(|s| s.to_string())
                             .collect::<HashSet<_>>();
@@ -415,13 +378,136 @@ impl<'a> CrossedWires {
         swapped_wires.sort_unstable();
         Some(swapped_wires.iter().join(","))
     }
+
+    fn contains_all(expected_x_deps: &[String], actual_x_deps: &[String]) -> bool {
+        actual_x_deps.iter().all(|wire| expected_x_deps.contains(wire))
+    }
+
+    fn x_deps(wires: &HashMap<String, WireSource>, wire: &String) -> Vec<String> {
+        CrossedWires::sources_of(wires, wire).unwrap().into_iter().filter(|wire| wire.starts_with('x')).collect()
+    }
+
+    fn net_value(wire: &str) -> Option<u32> {
+        let digits: String = wire.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            return None;
+        }
+        let net = digits.parse::<u32>().unwrap();
+        Some(net)
+    }
+
+    fn find_swap_wire(wires: &HashMap<String, WireSource>, banned_deps: &[String], expected_x_deps: &[String], min_net: u32) -> Option<String> {
+        println!("BANNED DEPS: {:?}", banned_deps);
+        // Find the wire that is contained by expected_x_deps but is NOT in banned_deps
+        let matching: Vec<_> = wires.keys()
+            .filter(|wire| !banned_deps.contains(wire))
+            .filter(|wire| !wire.starts_with('y') && !wire.starts_with('x'))
+            .filter(|wire| CrossedWires::contains_all(expected_x_deps, &CrossedWires::x_deps(wires, wire)))
+            .filter(|wire| CrossedWires::net_value(wire).unwrap() >= min_net)
+            .collect();
+        println!("ALL MATCHING: {:?}", matching);
+        assert_eq!(matching.len(), 1, "Too few/many wires found for swap!");
+        Some(matching[0].to_string())
+    }
+
+    // Apparently, z0-zn are completely okay. They might have the right dependencies, but the wrong values.
+    // That means wires inside each of zn are mixed up.
+    // Maybe we're thinking about this wrong.
+    // We know how a binary adder works.
+    // We can supply x0, y0 and test if z0 is the right answer.
+    // How does the adder work again?
+    // if x & y are 1, we need to carry one.
+    // Otherwise, we xor.
+
+    // z0 = x0 ^ y0
+    // z1 = (x1 ^ y1) 
+
+    fn get_swap(wires: &HashMap<String, WireSource>, z_wire: &String, expected_x_deps: &[String]) -> Option<(String, String)> {
+        if !z_wire.starts_with('z') {
+            return None;
+        }
+
+        // No need to swap if x deps are entirely contained
+        let x_deps_of_z = CrossedWires::x_deps(wires, z_wire);
+        let mut banned_x_deps: Vec<_> = x_deps_of_z.iter().filter(|x| !expected_x_deps.contains(x)).map(|s| s.to_string()).collect();
+        if banned_x_deps.is_empty() {
+            return None;
+        }
+        banned_x_deps.sort_unstable();
+        let all_deps_of_z = Vec::from_iter(CrossedWires::sources_of(wires, z_wire).unwrap());
+        let z_net = CrossedWires::net_value(z_wire).unwrap();
+
+        // At least one swap is needed! Traverse the tree from the root until we located the bad node.
+        let mut current = z_wire.clone();
+        // We can't find swap wire to the left of where we are - but how do we say that?
+        // A separate search space we prune as find more things?
+        let swap_target = CrossedWires::find_swap_wire(wires, &all_deps_of_z, expected_x_deps, z_net).unwrap();
+        loop {
+            // Find the level 1 deps of the wire.
+            let lvl1deps = CrossedWires::deps_1(wires, &current).unwrap();
+            // Do we only have wires? If so, this needs to be swapped.
+            if lvl1deps.iter().filter(|wire| wire.starts_with('x')).count() > 0 {
+                return Some((current, swap_target));
+            }
+
+            // Check which node introduces the wires we don't want.
+            let left = lvl1deps[0].clone();
+            let left_x_deps = CrossedWires::x_deps(wires, &left);
+            if CrossedWires::contains_all(&left_x_deps, &banned_x_deps) {
+                current = left;
+                continue;
+            }
+            let right = lvl1deps[1].clone();
+            let right_x_deps = CrossedWires::x_deps(wires, &right);
+            if CrossedWires::contains_all(&right_x_deps, &banned_x_deps) {
+                current = right;
+                continue;
+            }
+
+            // Neither node suitable for traversal; return!
+            return Some((current, swap_target));
+        }
+    }
+
+    fn part_b_alt(&self) -> Option<String> {
+        let mut swapped_wires: Vec<String> = vec![];
+        let mut updated_wires = self.wires.clone();
+
+        // Get an ordered list of z wires to check through
+        let z_wires: Vec<String> = self
+            .wires
+            .keys()
+            .filter(|wire| wire.starts_with('z'))
+            .sorted()
+            .map(|s| s.to_owned())
+            .collect();
+
+        // For each, check if there is a swap to do
+        let mut expected_x_deps = vec![];
+        for (z_idx, z_wire) in z_wires.iter().enumerate() {
+            expected_x_deps.push(format!("x{:#02}", z_idx));
+            while let Some((left, right)) = CrossedWires::get_swap(&updated_wires, z_wire, &expected_x_deps) {
+                // Track the swapped wires
+                swapped_wires.push(left.clone());
+                swapped_wires.push(right.clone());
+                // Swap within updated wires
+                let left_contents = updated_wires.get(&left).unwrap().clone();
+                let right_contents = updated_wires.get(&right).unwrap().clone();
+                updated_wires.insert(left, right_contents);
+                updated_wires.insert(right, left_contents);
+            }
+        }
+
+        swapped_wires.sort_unstable();
+        Some(swapped_wires.iter().join(","))
+    }
 }
 
 fn main() {
     let puzzle = include_str!("../puzzle/input.txt");
     let wires = CrossedWires::from_str(puzzle).expect("Error parsing puzzle");
-    println!("Part A: {:?}", wires.part_a());
-    println!("Part B: {:?}", wires.part_b(8));
+    // println!("Part A: {:?}", wires.part_a());
+    println!("Part B: {:?}", wires.part_b_alt());
 }
 
 #[cfg(test)]
@@ -446,6 +532,13 @@ mod tests {
     fn test_test_part_b_txt() {
         let puzzle = include_str!("../puzzle/test_part_b.txt");
         let wires = CrossedWires::from_str(puzzle).unwrap();
-        assert_eq!(Some("z00,z01,z02,z05".to_string()), wires.part_b(4));
+        assert_eq!(Some("z00,z01,z02,z05".to_string()), wires.part_b_alt());
+    }
+
+    #[test]
+    fn test_test_ands_txt() {
+        let puzzle = include_str!("../puzzle/test_ands.txt");
+        let wires = CrossedWires::from_str(puzzle).unwrap();
+        assert_eq!(Some("z00,z01".to_string()), wires.part_b_alt());
     }
 }
