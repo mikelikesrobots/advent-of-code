@@ -1,6 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
+    collections::{HashMap, HashSet}, str::FromStr
 };
 
 use itertools::Itertools;
@@ -20,6 +19,7 @@ use itertools::Itertools;
 // How many of those are there? Maybe those^4 is acceptable?
 // Let's figure out the bits that are wrong, then work out the wires that contribute to them
 // and collect them into a big list and print that list out. Or its length.
+type TestCase = ((u64, u64), u64);
 
 #[derive(Debug, Clone)]
 enum WireSource {
@@ -617,6 +617,156 @@ impl<'a> CrossedWires {
         swapped_wires.sort_unstable();
         Some(swapped_wires.iter().join(","))
     }
+
+
+    fn part_b_alt3(&self) -> Option<String> {
+        // So the idea is to test from bit 0 up to bit n. For each, swap two wires until the test cases pass.
+        // Very similar to alt2, only with different test cases and methods of testing.
+
+        let z_wires: Vec<String> = self
+            .wires
+            .keys()
+            .filter(|wire| wire.starts_with('z'))
+            .sorted()
+            .map(|s| s.to_owned())
+            .collect();
+        let max_idx: u32 = z_wires.iter().max().unwrap().chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap();
+        println!("max idx: {}", max_idx);
+
+        let set_char = |c: char, val: i64, wires: &mut HashMap<String, WireSource>| {
+            (0..max_idx).for_each(|idx| {
+                // Get the bit from x
+                let val = ((val >> idx) & 0b1) as u64;
+                let wire = format!("{}{:#02}", c, idx);
+                wires.insert(wire, WireSource::Const(val));
+            })
+        };
+        let test_adder_bit_correct = |idx: usize, wire: &String, wires: &mut HashMap<String, WireSource>| {
+            // Shift 1s left by idx + 1, then bit flip
+            //  e.g. idx = 3; Want mask 1111 to get bottom bits;
+            //  11111 << 4 = 10000; flip for 01111
+            let xymask = !(!0 << (idx + 1));
+
+            // Test that x 0s and y 1s gives z 0 followed by 1s.
+            let x_val = 0;
+            let y_val = !0 & xymask;
+            let _expected_z = !0 & xymask;
+            set_char('x', x_val, wires);
+            set_char('y', y_val, wires);
+
+            match CrossedWires::value(wires, wire) {
+                // actual value is equal to expected value
+                Some(_expected_z) => (),
+                // None or actual value is different to expected value
+                _ => return false,
+            };
+
+            // Repeat 0s and 1s for y, x
+            let x_val = y_val;
+            let y_val = 0;
+            set_char('x', x_val, wires);
+            set_char('y', y_val, wires);
+            match CrossedWires::value(wires, wire) {
+                // actual value is equal to expected value
+                Some(_expected_z) => (),
+                // None or actual value is different to expected value
+                _ => return false,
+            };
+
+            // Check if carry bit is calculated correctly
+            let x_val = !0 & xymask;
+            let y_val = !0 & xymask;
+            let _expected_z = 1 << (idx + 1);
+            set_char('x', x_val, wires);
+            set_char('y', y_val, wires);
+            match CrossedWires::value(wires, wire) {
+                // actual value is equal to expected value
+                Some(_expected_z) => (),
+                // None or actual value is different to expected value
+                _ => return false,
+            };
+
+            true
+        };
+
+        let mut swapped_wires: Vec<String> = vec![];
+        let mut swap_cands: Vec<(String, String)> = vec![];
+        let mut wires = self.wires.clone();
+
+        let mut swap_cands: HashSet<Vec<String>> = HashSet::new();
+        let mut current_swap_cands: HashSet<Vec<String>> = HashSet::new();
+
+        for (z_idx, z_wire) in z_wires.iter().enumerate() {
+            if test_adder_bit_correct(z_idx, z_wire, &mut wires) {
+                continue;
+            }
+            println!("{} failed test cases!", z_wire);
+
+            current_swap_cands.clear();
+
+            // let keys = wires.keys().map(|key| key.to_string()).filter(|key| !swapped_wires.contains(key)).collect::<Vec<_>>();
+            let keys = wires
+                .iter()
+                .filter(|(key, _)| !key.starts_with('x'))
+                .filter(|(key, _)| !key.starts_with('y'))
+                .filter(|(key, _)| !key.starts_with('z'))
+                .filter(|(_, val)| !matches!(val, WireSource::Const(_)))
+                .map(|(key, _)| key.to_string())
+                .collect::<Vec<_>>();
+            // let keys = wires.keys().map(|key| key.to_string()).collect::<Vec<_>>();
+            for swap_deps in keys.iter().permutations(2) {
+                let left = swap_deps[0].to_string();
+                let right = swap_deps[1].to_string();
+                let left_val = wires.get(&left).unwrap().clone();
+                let right_val = wires.get(&right).unwrap().clone();
+                // Swap the values
+                wires.insert(left.clone(), right_val.clone());
+                wires.insert(right.clone(), left_val.clone());
+                // Test the new values
+                let success = test_adder_bit_correct(z_idx, z_wire, &mut wires);
+                // Swap the values back!
+                wires.insert(left.clone(), left_val);
+                wires.insert(right.clone(), right_val);
+
+                // Did the swap work? If so, store it for next iteration
+                if success {
+                    println!("New swap candidate found: {}, {}", left, right);
+                    let mut swap_cand = vec![left.to_string(), right.to_string()];
+                    swap_cand.sort_unstable();
+                    current_swap_cands.insert(swap_cand);
+                }
+            }
+
+            swap_cands = swap_cands.intersection(&current_swap_cands).map(|cand| cand.clone()).collect();
+
+            // Do we have only 1 candidate? Use that one!
+            if swap_cands.len() == 1 {
+                swap_cands.iter().for_each(|cand| {
+                    let left = cand[0].to_string();
+                    let right = cand[1].to_string();
+                    println!("Corrected by swapping {} and {}!", &left, &right);
+                    let left_val = wires.get(&left).unwrap().clone();
+                    let right_val = wires.get(&right).unwrap().clone();
+                    // Swap the values
+                    wires.insert(left.clone(), right_val.clone());
+                    wires.insert(right.clone(), left_val.clone());
+                    swapped_wires.push(left);
+                    swapped_wires.push(right);
+                });
+                swap_cands.clear();
+            }
+
+            println!("Damn, didn't find a swap to make it work.");
+            return None;
+        }
+
+        // There are a lot of wires that COULD be swapped. I never get to z03.
+        // That's because I return None, but I should go to next iteration.
+        // Continue this algorithm later.
+
+        swapped_wires.sort_unstable();
+        Some(swapped_wires.iter().join(","))
+    }
 }
 
 // That didn't work.
@@ -630,7 +780,7 @@ fn main() {
     let puzzle = include_str!("../puzzle/input.txt");
     let wires = CrossedWires::from_str(puzzle).expect("Error parsing puzzle");
     // println!("Part A: {:?}", wires.part_a());
-    println!("Part B: {:?}", wires.part_b_alt2());
+    println!("Part B: {:?}", wires.part_b_alt3());
 }
 
 #[cfg(test)]
