@@ -99,13 +99,21 @@ impl FromStr for CrossedWires {
 }
 
 impl<'a> CrossedWires {
-    fn value(&self, wire: &String) -> Option<u64> {
-        match self.wires.get(wire) {
+    fn value(wires: &HashMap<String, WireSource>, wire: &String) -> Option<u64> {
+        CrossedWires::value_inner(wires, wire, &mut HashSet::new())
+    }
+    
+    fn value_inner(wires: &HashMap<String, WireSource>, wire: &String, visited: &mut HashSet<String>) -> Option<u64> {
+        if visited.contains(wire) {
+            return None;
+        }
+        visited.insert(wire.to_string());
+        match wires.get(wire) {
             None => None,
             Some(WireSource::Const(x)) => Some(*x),
-            Some(WireSource::And(l, r)) => self.value(l).and_then(|l| self.value(r).map(|r| l & r)),
-            Some(WireSource::Xor(l, r)) => self.value(l).and_then(|l| self.value(r).map(|r| l ^ r)),
-            Some(WireSource::Or(l, r)) => self.value(l).and_then(|l| self.value(r).map(|r| l | r)),
+            Some(WireSource::And(l, r)) => CrossedWires::value_inner(wires, l, visited).and_then(|l| CrossedWires::value_inner(wires, r, visited).map(|r| l & r)),
+            Some(WireSource::Xor(l, r)) => CrossedWires::value_inner(wires, l, visited).and_then(|l| CrossedWires::value_inner(wires, r, visited).map(|r| l ^ r)),
+            Some(WireSource::Or(l, r)) => CrossedWires::value_inner(wires, l, visited).and_then(|l| CrossedWires::value_inner(wires, r, visited).map(|r| l | r)),
         }
     }
 
@@ -145,7 +153,7 @@ impl<'a> CrossedWires {
         keys.reverse();
 
         keys.iter()
-            .try_fold(0, |acc, gate| self.value(gate).map(|val| (acc << 1) + val))
+            .try_fold(0, |acc, gate| CrossedWires::value(&self.wires, gate).map(|val| (acc << 1) + val))
     }
 
     fn deps_1(wires: &HashMap<String, WireSource>, wire: &String) -> Option<Vec<String>> {
@@ -420,7 +428,12 @@ impl<'a> CrossedWires {
     // Otherwise, we xor.
 
     // z0 = x0 ^ y0
-    // z1 = (x1 ^ y1) 
+    // z1 = (x1 ^ y1)
+
+    // 00 + 10 -> 1
+    // 10 + 00 -> 1
+    // 10 + 10 -> 0
+    // 11 + 11 -> 1
 
     fn get_swap(wires: &HashMap<String, WireSource>, z_wire: &String, expected_x_deps: &[String]) -> Option<(String, String)> {
         if !z_wire.starts_with('z') {
@@ -501,13 +514,123 @@ impl<'a> CrossedWires {
         swapped_wires.sort_unstable();
         Some(swapped_wires.iter().join(","))
     }
+
+    // z0 = x0 ^ y0
+    // z1 = (x1 ^ y1)
+
+    // 00 + 10 -> 1
+    // 10 + 00 -> 1
+    // 10 + 10 -> 0
+    // 11 + 11 -> 1
+    fn part_b_alt2(&self) -> Option<String> {
+        // Find the bits which don't pass the test cases
+        let no_carry_cases = vec![
+            ((0b0, 0b1), 0b1),
+            ((0b1, 0b0), 0b1),
+            ((0b1, 0b1), 0b0),
+        ];
+        let carry_cases = vec![
+            ((0b00, 0b10), 0b1),
+            ((0b10, 0b00), 0b1),
+            ((0b10, 0b10), 0b0),
+            ((0b11, 0b11), 0b1),
+        ];
+        let z_wires: Vec<String> = self
+            .wires
+            .keys()
+            .filter(|wire| wire.starts_with('z'))
+            .sorted()
+            .map(|s| s.to_owned())
+            .collect();
+        let max_idx: u32 = z_wires.iter().max().unwrap().chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap();
+        println!("max idx: {}", max_idx);
+        let set_char = |c: char, val: i64, wires: &mut HashMap<String, WireSource>| {
+            (0..max_idx).for_each(|idx| {
+                // Get the bit from x
+                let val = ((val >> idx) & 0b1) as u64;
+                let wire = format!("{}{:#02}", c, idx);
+                wires.insert(wire, WireSource::Const(val));
+            })
+        };
+        let test_adder_bit_correct = |idx: usize, wire: &String, wires: &mut HashMap<String, WireSource>| {
+            let (cases, right_shift) = match idx {
+                0 => (&no_carry_cases, 0),
+                _ => (&carry_cases, 1),
+            };
+
+            cases.iter().all(|((x, y), z)| {
+                let x_val = (x << idx) >> right_shift;
+                let y_val = (y << idx) >> right_shift;
+                set_char('x', x_val, wires);
+                set_char('y', y_val, wires);
+                match CrossedWires::value(wires, wire) {
+                    Some(z_val) => z_val == *z,
+                    None => false,
+                }
+            })
+        };
+        
+        // My test cases are not sufficient. I keep testing that it becomes correct
+        // when it isn't correct. Is there something else I can do?
+        // 
+        let mut swapped_wires: Vec<String> = vec![];
+        
+        let mut wires = self.wires.clone();
+
+        'outer: for (z_idx, z_wire) in z_wires.iter().enumerate() {
+            if test_adder_bit_correct(z_idx, z_wire, &mut wires) {
+                continue;
+            }
+            println!("{} failed test cases!", z_wire);
+
+            // Figure out swaps by trying all switched pairs within dependencies of z_wire.
+            // let raw_deps = CrossedWires::sources_of(&wires, z_wire).unwrap();
+            // println!("{} has raw deps {:?}", z_wire, raw_deps);
+            // let deps: Vec<String> = raw_deps.iter().filter(|wire| !wire.starts_with('x') && !wire.starts_with('y')).map(|s| s.to_string()).collect();
+            // println!("{} has deps {:?}", z_wire, deps);
+            // let keys = wires.iter().filter(|(_, val)| !matches!(val, WireSource::Const(_))).map(|(key, _)| key.to_string()).collect::<Vec<_>>();
+            let keys = wires.keys().map(|key| key.to_string()).filter(|key| !swapped_wires.contains(key)).collect::<Vec<_>>();
+            for swap_deps in keys.iter().permutations(2) {
+                let left = swap_deps[0].to_string();
+                let right = swap_deps[1].to_string();
+                let left_val = wires.get(&left).unwrap().clone();
+                let right_val = wires.get(&right).unwrap().clone();
+                // Swap the values
+                wires.insert(left.clone(), right_val.clone());
+                wires.insert(right.clone(), left_val.clone());
+                // Test the new values
+                if test_adder_bit_correct(z_idx, z_wire, &mut wires) {
+                    println!("Corrected by swapping {} and {}!", &left, &right);
+                    swapped_wires.push(left);
+                    swapped_wires.push(right);
+                    continue 'outer;
+                }
+                // Swap the values back!
+                wires.insert(left.clone(), left_val);
+                wires.insert(right.clone(), right_val);
+                // println!("Swapping {} and {} didn't work!", left, right);
+            }
+            println!("Damn, didn't find a swap to make it work.");
+            return None;
+        }
+
+        swapped_wires.sort_unstable();
+        Some(swapped_wires.iter().join(","))
+    }
 }
+
+// That didn't work.
+// Brute force again?
+// I can go from smallest to biggest bits.
+// The weird part is that I did get through one full test of all wire pairs and it still didn't work.
+// How can that be?
+// Well, never swapping back is a bit of a problem.
 
 fn main() {
     let puzzle = include_str!("../puzzle/input.txt");
     let wires = CrossedWires::from_str(puzzle).expect("Error parsing puzzle");
     // println!("Part A: {:?}", wires.part_a());
-    println!("Part B: {:?}", wires.part_b_alt());
+    println!("Part B: {:?}", wires.part_b_alt2());
 }
 
 #[cfg(test)]
