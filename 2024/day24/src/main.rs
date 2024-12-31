@@ -1,7 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet}, str::FromStr
+    collections::{HashMap, HashSet}, fs::File, io::{BufWriter, Write}, str::FromStr
 };
-
 use itertools::Itertools;
 
 // Okay. Let's think here.
@@ -19,7 +18,6 @@ use itertools::Itertools;
 // How many of those are there? Maybe those^4 is acceptable?
 // Let's figure out the bits that are wrong, then work out the wires that contribute to them
 // and collect them into a big list and print that list out. Or its length.
-type TestCase = ((u64, u64), u64);
 
 #[derive(Debug, Clone)]
 enum WireSource {
@@ -143,9 +141,8 @@ impl<'a> CrossedWires {
         }
     }
 
-    fn convert_starting_with(&self, start: char) -> Option<u64> {
-        let mut keys: Vec<&String> = self
-            .wires
+    fn convert_starting_with(wires: &HashMap<String, WireSource>, start: char) -> Option<u64> {
+        let mut keys: Vec<&String> = wires
             .keys()
             .filter(|key| key.starts_with(start))
             .collect();
@@ -153,7 +150,7 @@ impl<'a> CrossedWires {
         keys.reverse();
 
         keys.iter()
-            .try_fold(0, |acc, gate| CrossedWires::value(&self.wires, gate).map(|val| (acc << 1) + val))
+            .try_fold(0, |acc, gate| CrossedWires::value(&wires, gate).map(|val| (acc << 1) + val))
     }
 
     fn deps_1(wires: &HashMap<String, WireSource>, wire: &String) -> Option<Vec<String>> {
@@ -213,14 +210,8 @@ impl<'a> CrossedWires {
                 }
 
                 // Now check against the wire sources
-                let other = CrossedWires {
-                    wires: wire_sources,
-                };
-                if other
-                    .convert_starting_with('z')
-                    .iter()
-                    .any(|z| *z == correct_result)
-                {
+                if CrossedWires::convert_starting_with(&wire_sources, 'z').iter()
+                .any(|z| *z == correct_result) {
                     return Some(next_acc.to_vec());
                 }
             }
@@ -230,10 +221,10 @@ impl<'a> CrossedWires {
 
     fn part_a(&self) -> Option<u64> {
         // Find all the keys starting with z
-        self.convert_starting_with('z')
+        CrossedWires::convert_starting_with(&self.wires, 'z')
     }
 
-    fn part_b(&self, depth_limit: usize) -> Option<String> {
+    fn part_b(&self, n_permutations: usize) -> Option<String> {
         // let x = self.convert_starting_with('x');
         // let y = self.convert_starting_with('y');
         // let z_correct = x.and_then(|x| y.map(|y| y + x));
@@ -257,12 +248,21 @@ impl<'a> CrossedWires {
         // The first gate where we get new additions doesn't mean that's the one which needs swapping. It could be
         // one of its children. So we probably need to recurse through that network to find the broken point.
 
+        // Can I get x, y, z value from the set? Maybe a set as well?
+        // Let's just try with only the initial input as the way to do it.
+
         let z_wires: Vec<String> = self
             .wires
             .keys()
             .filter(|wire| wire.starts_with('z'))
             .sorted()
             .map(|s| s.to_owned())
+            .collect();
+        let swappables: Vec<String> = self
+            .wires
+            .iter()
+            .filter(|(_, source)| matches!(source, WireSource::Const(_)))
+            .map(|(name, _)| name.to_owned())
             .collect();
         let mut expected_xy_deps = vec![];
         let mut wires = self.wires.clone();
@@ -610,7 +610,7 @@ impl<'a> CrossedWires {
                 wires.insert(right.clone(), right_val);
                 // println!("Swapping {} and {} didn't work!", left, right);
             }
-            println!("Damn, didn't find a swap to make it work.");
+            println!("Didn't find a swap to make it work.");
             return None;
         }
 
@@ -622,6 +622,13 @@ impl<'a> CrossedWires {
     fn part_b_alt3(&self) -> Option<String> {
         // So the idea is to test from bit 0 up to bit n. For each, swap two wires until the test cases pass.
         // Very similar to alt2, only with different test cases and methods of testing.
+
+        // There are many possibilities for each wire.
+        // The top end won't be fixed until the bottom end is. Probably.
+        // We don't know that for sure, but we should continue as if it is true.
+        // Actually, a gap in the right place would make it work correctly again.
+        // Then I only need to check wire swaps for that index - 1.
+        // Maybe I could try that?
 
         let z_wires: Vec<String> = self
             .wires
@@ -674,8 +681,8 @@ impl<'a> CrossedWires {
             };
 
             // Check if carry bit is calculated correctly
-            let x_val = !0 & xymask;
-            let y_val = !0 & xymask;
+            let x_val = xymask;
+            let y_val = xymask;
             let _expected_z = 1 << (idx + 1);
             set_char('x', x_val, wires);
             set_char('y', y_val, wires);
@@ -737,7 +744,7 @@ impl<'a> CrossedWires {
                 }
             }
 
-            swap_cands = swap_cands.intersection(&current_swap_cands).map(|cand| cand.clone()).collect();
+            swap_cands = swap_cands.intersection(&current_swap_cands).cloned().collect();
 
             // Do we have only 1 candidate? Use that one!
             if swap_cands.len() == 1 {
@@ -756,31 +763,155 @@ impl<'a> CrossedWires {
                 swap_cands.clear();
             }
 
-            println!("Damn, didn't find a swap to make it work.");
+            println!("Didn't find a swap to make it work.");
             return None;
         }
-
-        // There are a lot of wires that COULD be swapped. I never get to z03.
-        // That's because I return None, but I should go to next iteration.
-        // Continue this algorithm later.
 
         swapped_wires.sort_unstable();
         Some(swapped_wires.iter().join(","))
     }
-}
 
-// That didn't work.
-// Brute force again?
-// I can go from smallest to biggest bits.
-// The weird part is that I did get through one full test of all wire pairs and it still didn't work.
-// How can that be?
-// Well, never swapping back is a bit of a problem.
+    fn part_b_alt4(&self, n_permutations: usize) -> Option<String> {
+        
+        let z_wires: Vec<String> = self
+            .wires
+            .keys()
+            .filter(|wire| wire.starts_with('z'))
+            .sorted()
+            .map(|s| s.to_owned())
+            .collect();
+        let swappables: Vec<String> = self
+            .wires
+            .iter()
+            .filter(|(_, source)| !matches!(source, WireSource::Const(_)))
+            .map(|(name, _)| name.to_owned())
+            .collect();
+        let swap = |left: &String, right: &String, wires: &mut HashMap<String, WireSource>| {
+            let left_val = wires.get(left).unwrap().clone();
+            let right_val = wires.get(right).unwrap().clone();
+            wires.insert(left.clone(), right_val);
+            wires.insert(right.clone(), left_val);
+        };
+        let mut wires = self.wires.clone();
+
+        let x = CrossedWires::convert_starting_with(&wires, 'x').unwrap();
+        let y = CrossedWires::convert_starting_with(&wires, 'y').unwrap();
+        let z_correct = x + y;
+
+        for perms in swappables.iter().permutations(n_permutations) {
+            for mut wire_pair in &perms.iter().chunks(2) {
+                // Swap
+                swap(wire_pair.next().unwrap(), wire_pair.next().unwrap(), &mut wires);
+            }
+
+            // Test
+            let z_test = CrossedWires::convert_starting_with(&wires, 'z').unwrap();
+            if z_correct == z_test {
+                return Some(perms.iter().sorted().join(","));
+            }
+
+            for mut wire_pair in &perms.iter().chunks(2) {
+                // Swap back
+                swap(wire_pair.next().unwrap(), wire_pair.next().unwrap(), &mut wires);
+            }
+        }
+
+        None
+    }
+
+    // https://www.reddit.com/r/adventofcode/comments/1hl698z/comment/m3v5dfv
+    fn visualize(&self) -> Result<String, std::io::Error>{
+        let f = File::create("day24.dot")?;
+        let mut out = BufWriter::new(f);
+        writeln!(out, "digraph {{")?;
+        writeln!(out, "  rankdir=\"LR\";")?;
+        writeln!(out, "  node [style=filled];")?;
+
+        for (wire, source) in self.wires.iter() {
+            match source {
+                // Ignore consts
+                WireSource::Const(_) => (),
+                WireSource::And(left, right) => {
+                    writeln!(out, "  {wire} -> {left};")?;
+                    writeln!(out, "  {wire} -> {right};")?;
+                    writeln!(out, "  {wire} [label=\"{wire} (AND)\"];")?;    
+                    writeln!(out, "  {wire} [color=\"red\"];")?;
+                },
+                WireSource::Or(left, right) => {
+                    writeln!(out, "  {wire} -> {left};")?;
+                    writeln!(out, "  {wire} -> {right};")?;
+                    writeln!(out, "  {wire} [label=\"{wire} (OR)\"];")?;    
+                    writeln!(out, "  {wire} [color=\"blue\"];")?;
+                },
+                WireSource::Xor(left, right) => {
+                    writeln!(out, "  {wire} -> {left};")?;
+                    writeln!(out, "  {wire} -> {right};")?;
+                    writeln!(out, "  {wire} [label=\"{wire} (XOR)\"];")?;    
+                    writeln!(out, "  {wire} [color=\"green\"];")?;
+                },
+            }
+        }
+        writeln!(out, "}}")?;
+
+        let mut swapped_wires = vec![];
+        let mut swap = |left: &str, right: &str, wires: &mut HashMap<String, WireSource>| {
+            let left_val = wires.get(left).unwrap().clone();
+            let right_val = wires.get(right).unwrap().clone();
+            wires.insert(left.to_string(), right_val);
+            wires.insert(right.to_string(), left_val);
+            swapped_wires.push(left.to_string());
+            swapped_wires.push(right.to_string());
+        };
+        let mut wires = self.wires.clone();
+        swap("ggk", "rhv", &mut wires);
+        swap("z20", "hhh", &mut wires);
+        swap("z15", "htp", &mut wires);
+        swap("z05", "dkr", &mut wires);
+
+        let f = File::create("day24_swapped.dot")?;
+        let mut out = BufWriter::new(f);
+        writeln!(out, "digraph {{")?;
+        writeln!(out, "  rankdir=\"LR\";")?;
+        writeln!(out, "  node [style=filled];")?;
+
+        for (wire, source) in wires.iter() {
+            match source {
+                // Ignore consts
+                WireSource::Const(_) => (),
+                WireSource::And(left, right) => {
+                    writeln!(out, "  {wire} -> {left};")?;
+                    writeln!(out, "  {wire} -> {right};")?;
+                    writeln!(out, "  {wire} [label=\"{wire} (AND)\"];")?;    
+                    writeln!(out, "  {wire} [color=\"red\"];")?;
+                },
+                WireSource::Or(left, right) => {
+                    writeln!(out, "  {wire} -> {left};")?;
+                    writeln!(out, "  {wire} -> {right};")?;
+                    writeln!(out, "  {wire} [label=\"{wire} (OR)\"];")?;    
+                    writeln!(out, "  {wire} [color=\"blue\"];")?;
+                },
+                WireSource::Xor(left, right) => {
+                    writeln!(out, "  {wire} -> {left};")?;
+                    writeln!(out, "  {wire} -> {right};")?;
+                    writeln!(out, "  {wire} [label=\"{wire} (XOR)\"];")?;    
+                    writeln!(out, "  {wire} [color=\"green\"];")?;
+                },
+            }
+        }
+        writeln!(out, "}}")?;
+
+        let correct = swapped_wires.iter().sorted().join(",");
+        Ok(correct)
+    }
+}
 
 fn main() {
     let puzzle = include_str!("../puzzle/input.txt");
     let wires = CrossedWires::from_str(puzzle).expect("Error parsing puzzle");
-    // println!("Part A: {:?}", wires.part_a());
-    println!("Part B: {:?}", wires.part_b_alt3());
+    println!("Part A: {:?}", wires.part_a());
+    // println!("Part B: {:?}", wires.visualize());
+    println!("Part B: {:?}", wires.part_b_alt4(8));
+    // println!("{:?}", (0..4).permutations(3).collect::<Vec<_>>());
 }
 
 #[cfg(test)]
