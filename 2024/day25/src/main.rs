@@ -8,7 +8,8 @@ struct CodeChronicle {
     keys: Vec<u64>,
 }
 
-#[derive(Debug, Error)]
+#[allow(clippy::enum_variant_names)]
+#[derive(Error, Debug)]
 enum CodeChronicleParseErr {
     #[error("Invalid char for lock/key `{0}`")]
     InvalidChar(char),
@@ -23,11 +24,11 @@ enum CodeChronicleParseErr {
 // 000
 
 // 000
-// 000
+// 001
 // 111
 
 // 111101000
-// 000000111
+// 000001111
 // AND == 0
 
 impl FromStr for CodeChronicle {
@@ -38,8 +39,8 @@ impl FromStr for CodeChronicle {
 
         let keymask = 0b11111;
         let lockmask = (0b11111) << 30;
-        let is_key = |entry: &u64| {entry & keymask > 0};
-        let is_lock = |entry: &u64| {entry & lockmask > 0};
+        let is_key = |entry: &u64| {entry & keymask == keymask};
+        let is_lock = |entry: &u64| {entry & lockmask == lockmask};
         
         let mut keys = vec![];
         let mut locks = vec![];
@@ -51,7 +52,7 @@ impl FromStr for CodeChronicle {
             }
 
             let entry = set.iter().try_fold(0, |acc, line| {
-                if line.len() != 5{
+                if line.len() != 5 {
                     return Err(Self::Err::InvalidLineLength(line.to_string()));
                 }
                 let line_value = line.chars().try_fold(0, |acc, c| {
@@ -90,9 +91,9 @@ impl CodeChronicle {
 }
 
 fn main() -> Result<(), CodeChronicleParseErr> {
-    let puzzle = include_str!("../puzzle/input.txt");
-    let chronicle = CodeChronicle::from_str(puzzle)?;
-    println!("Part A: {}", chronicle.part_a());
+    let puzzle = include_str!("../puzzle/test.txt");
+    let chronicle = CodeChronicle::from_str(puzzle);
+    println!("Part A: {}", chronicle?.part_a());
 
     Ok(())
 }
